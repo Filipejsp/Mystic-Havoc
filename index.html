@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mystic Havoc</title>
+    <style>
+        @keyframes floatAnimation {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+            100% { transform: translateY(0px); }
+        }
+        
+        @keyframes glowAnimation {
+            0% { filter: drop-shadow(0 0 5px #ff6b00); }
+            50% { filter: drop-shadow(0 0 15px #ff6b00); }
+            100% { filter: drop-shadow(0 0 5px #ff6b00); }
+        }
+
+        @keyframes buttonPulse {
+            0% { transform: scale(1); box-shadow: 0 0 10px rgba(255, 107, 0, 0.5); }
+            50% { transform: scale(1.05); box-shadow: 0 0 20px rgba(255, 107, 0, 0.8); }
+            100% { transform: scale(1); box-shadow: 0 0 10px rgba(255, 107, 0, 0.5); }
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            cursor: crosshair;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        .start-screen, .class-select-screen, .upgrade-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: transparent;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 20px;
+            padding: 20px;
+        }
+        .start-button, .class-button {
+            background: rgba(255, 107, 0, 0.2);
+            border: 2px solid rgba(255, 107, 0, 0.6);
+            border-radius: 20px;
+            padding: 20px 60px;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+            animation: buttonPulse 2s infinite;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: bold;
+            backdrop-filter: blur(5px);
+        }
+        .start-button:hover, .class-button:hover {
+            background: rgba(255, 107, 0, 0.4);
+            transform: scale(1.1);
+        }
+        .class-button img {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 10px;
+        }
+        .upgrade-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+        }
+        .upgrade-card {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 10px;
+            padding: 15px;
+            width: 200px;
+            color: white;
+            text-align: center;
+            cursor: pointer;
+        }
+        .common { border-color: #fff; }
+        .uncommon { border-color: #0f0; }
+        .epic { border-color: #f0f; }
+        .ascension { border-color: #ff0; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div class="start-screen" id="startScreen">
+        <video autoplay muted loop style="position: fixed; right: 0; bottom: 0; min-width: 100%; min-height: 100%; width: auto; height: auto; z-index: -1;">
+            <source src="fundo.mp4" type="video/mp4">
+        </video>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 40px;">
+            <img src="logo.png" alt="Mystic Havoc" style="width: 600px; animation: floatAnimation 3s infinite ease-in-out, glowAnimation 3s infinite ease-in-out;">
+            <button class="start-button" onclick="showClassSelect()">Begin Your Journey</button>
+        </div>
+    </div>
+    <div class="class-select-screen" id="classSelectScreen">
+        <h2 style="color: white; font-size: 36px;">Select Your Class</h2>
+        <div style="display: flex; gap: 20px;">
+            <div class="class-button" onclick="selectClass('mage')">
+                <img src="player.png" alt="Mage">
+                <div>Mage</div>
+            </div>
+            <div class="class-button" onclick="selectClass('archer')">
+                <img src="archer.png" alt="Archer">
+                <div>Archer</div>
+            </div>
+        </div>
+    </div>
+    <div class="upgrade-screen" id="upgradeScreen"></div>
+    <script>
+        // Game constants
+        const GRAVITY = 0.5;
+        const JUMP_FORCE = -12;
+        const MOVE_SPEED = 5;
+        const PLAYER_SIZE = 128;
+        const PROJECTILE_SPEED = 10;
+        const ENEMY_SPAWN_RATE = 2000;
+        const SHOT_COOLDOWN = 250;
+
+        // Initialize canvas
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Game state
+        // Load game sprites
+        const playerSprite = new Image();
+        const archerSprite = new Image();
+        const enemyRedSprite = new Image();
+        const enemyGreenSprite = new Image();
+        const backgroundSprite = new Image();
+        const projectileSprite = new Image();
+        const arrowSprite = new Image();
+        let spritesLoaded = 0;
+        let selectedClass = null;
+
+        function startGameIfAllSpritesLoaded() {
+            spritesLoaded++;
+            if (spritesLoaded === 7) {
+                console.log('All sprites loaded');
+                gameLoop();
+            }
+        }
+
+        playerSprite.onload = startGameIfAllSpritesLoaded;
+        archerSprite.onload = startGameIfAllSpritesLoaded;
+        enemyRedSprite.onload = startGameIfAllSpritesLoaded;
+        enemyGreenSprite.onload = startGameIfAllSpritesLoaded;
+        backgroundSprite.onload = startGameIfAllSpritesLoaded;
+        projectileSprite.onload = startGameIfAllSpritesLoaded;
+        arrowSprite.onload = startGameIfAllSpritesLoaded;
+
+        playerSprite.src = 'player.png';
+        archerSprite.src = 'archer.png';
+        enemyRedSprite.src = 'enemy-red.png';
+        enemyGreenSprite.src = 'enemy-green.png';
+        backgroundSprite.src = 'background.png';
+        projectileSprite.src = 'fireball.png';
+        arrowSprite.src = 'arrow.png';
+
+        document.getElementById('startScreen').style.display = 'flex';
+
+        function showClassSelect() {
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('classSelectScreen').style.display = 'flex';
+        }
+
+        function selectClass(className) {
+            selectedClass = className;
+            document.getElementById('classSelectScreen').style.display = 'none';
+            gameLoop();
+        }
+
+        let player = {
+            x: canvas.width / 2,
+            y: canvas.height - 100,
+            vx: 0,
+            vy: 0,
+            hp: 100,
+            maxHp: 100,
+            exp: 0,
+            level: 1,
+            nextLevelExp: 100,
+            shooting: false,
+            lastShot: 0,
+            isGrounded: false,
+            canDoubleJump: true,
+            invincible: false,
+            projectileDamage: 10,
+            criticalChance: 0,
+            jumpMultiplier: 1,
+            defense: 1,
+            attackSpeed: 1,
+            soulDropChance: 0,
+            projectileHits: 1,
+            moveSpeed: 1,
+            projectileSize: 1,
+            invulnerabilityDuration: 500,
+            upgradeChoices: 3,
+            hasBarrier: false,
+            slowOnHit: false,
+            absorbentHealing: false,
+            explosionArea: 1,
+            upgrades: {},
+            size: PLAYER_SIZE
+        };
+
+        let projectiles = [];
+        let enemies = [];
+        let enemyProjectiles = [];
+        let platforms = [];
+        let gameTime = 0;
+        let lastEnemySpawn = 0;
+
+        // Initialize particles and effects
+        let particles = [];
+        let grassBlades = [];
+        
+        // Generate grass blades
+        function generateGrass() {
+            const groundY = canvas.height - 50;
+            const bladeCount = Math.floor(canvas.width / 5);
+            
+            for(let i = 0; i < bladeCount; i++) {
+                grassBlades.push({
+                    x: i * 5,
+                    y: groundY,
+                    height: 15 + Math.random() * 10,
+                    width: 3,
+                    angle: 0,
+                    speed: 0.02 + Math.random() * 0.02
+                });
+            }
+        }
+
+        // Generate ground platform
+        function generatePlatforms() {
+            platforms = [{
+                x: 0,
+                y: canvas.height - 50,
+                width: canvas.width,
+                height: 50
+            }];
+            generateGrass();
+        }
+        generatePlatforms();
+
+        // Upgrade system
+        const upgrades = {
+            common: [
+                { name: "Catalyst", description: "Projectile Damage +2", effect: p => p.projectileDamage += 2 },
+                { name: "Eyesight", description: "Critical Chance +5%", effect: p => p.criticalChance += 5 },
+                { name: "Growth", description: "Max. HP +10", effect: p => { p.maxHp += 10; p.hp += 10; } },
+                { name: "Impulse", description: "Jump Height +30%", effect: p => p.jumpMultiplier *= 1.3 },
+                { name: "Renew", description: "Heal to Max. HP", effect: p => p.hp = p.maxHp },
+                { name: "Resist", description: "Defense +4%", effect: p => p.defense *= 1.04 },
+                { name: "Resonance", description: "Atk Speed +12%", effect: p => p.attackSpeed *= 1.12 },
+                { name: "Souls", description: "Chance to drop soul orb 1%", effect: p => p.soulDropChance += 1 },
+                { name: "Stability", description: "Projectile takes +1 hit", effect: p => p.projectileHits++ },
+                { name: "Swift", description: "Movement Speed +20%", effect: p => p.moveSpeed *= 1.2 }
+            ],
+            uncommon: [
+                { name: "Catalyst+", description: "Projectile Damage +4", effect: p => p.projectileDamage += 4 },
+                { name: "Charge", description: "Projectile Size +20%", effect: p => p.projectileSize *= 1.2 },
+                { name: "Cloak", description: "Invulnerability +10% duration", effect: p => p.invulnerabilityDuration *= 1.1 }
+            ],
+            epic: [
+                { name: "Appraisal", description: "+1 item choice", effect: p => p.upgradeChoices++ },
+                { name: "Barrier", description: "Blocking shield", effect: p => p.hasBarrier = true },
+                { name: "Cold", description: "Slow enemies on hit", effect: p => p.slowOnHit = true }
+            ],
+            ascension: [
+                { name: "Absorbent", description: "Heal from hits while invulnerable", 
+                  effect: p => { p.absorbentHealing = true; p.upgrades.cloak += 4; } },
+                { name: "Anti-Aircraft", description: "Larger explosion area", 
+                  effect: p => { p.explosionArea *= 2; p.upgrades.friction += 10; } }
+            ]
+        };
+
+        function generateUpgradeChoices() {
+            let choices = [];
+            let weights = { common: 60, uncommon: 30, epic: 9, ascension: 1 };
+            
+            for(let i = 0; i < 3; i++) {
+                let roll = Math.random() * 100;
+                let tier = 'common';
+                
+                if(roll > 60) tier = 'uncommon';
+                if(roll > 90) tier = 'epic';
+                if(roll > 99) tier = 'ascension';
+                
+                let tierUpgrades = upgrades[tier].filter(u => !player.upgrades[u.name]);
+                if(tierUpgrades.length === 0) continue;
+                
+                let upgrade = tierUpgrades[Math.floor(Math.random() * tierUpgrades.length)];
+                upgrade.tier = tier;
+                choices.push(upgrade);
+            }
+            
+            return choices;
+        }
+
+        function showUpgrades() {
+            const screen = document.getElementById('upgradeScreen');
+            screen.style.display = 'flex';
+            screen.innerHTML = '';
+            
+            const choices = generateUpgradeChoices();
+            choices.forEach(upgrade => {
+                const card = document.createElement('div');
+                card.className = `upgrade-card ${upgrade.tier}`;
+                card.innerHTML = `
+                    <h3>${upgrade.name}</h3>
+                    <p>${upgrade.description}</p>
+                `;
+                card.onclick = () => {
+                    applyUpgrade(upgrade);
+                    screen.style.display = 'none';
+                };
+                screen.appendChild(card);
+            });
+        }
+
+        function applyUpgrade(upgrade) {
+            if(!player.upgrades[upgrade.name]) {
+                player.upgrades[upgrade.name] = 1;
+            } else {
+                player.upgrades[upgrade.name]++;
+            }
+            
+            upgrade.effect(player);
+        }
+
+        function updatePlayer() {
+            if(moveLeft) player.vx = -MOVE_SPEED * player.moveSpeed;
+            else if(moveRight) player.vx = MOVE_SPEED * player.moveSpeed;
+            else player.vx *= 0.8;
+
+            player.vy += GRAVITY;
+            player.x += player.vx;
+            player.y += player.vy;
+
+            // Platform collision
+            player.isGrounded = false;
+            for(let platform of platforms) {
+                if(player.x + player.size > platform.x && 
+                   player.x < platform.x + platform.width) {
+                    // Landing on top of platform
+                    if(player.y + player.size > platform.y && 
+                       player.y < platform.y && player.vy >= 0) {
+                        player.y = platform.y - player.size;
+                        player.vy = 0;
+                        player.isGrounded = true;
+                    }
+                    // Hitting platform from below
+                    else if(player.y < platform.y + platform.height && 
+                           player.y + player.size > platform.y + platform.height && 
+                           player.vy < 0) {
+                        player.y = platform.y + platform.height;
+                        player.vy = 0;
+                    }
+                }
+            }
+
+            // Boundary checking
+            player.x = Math.max(0, Math.min(canvas.width - player.size, player.x));
+            player.y = Math.max(0, Math.min(canvas.height - player.size, player.y));
+
+            // Shooting
+            if(player.shooting && Date.now() - player.lastShot > SHOT_COOLDOWN / player.attackSpeed) {
+                let damage = player.projectileDamage;
+                if(Math.random() < player.criticalChance / 100) {
+                    damage *= 2;
+                }
+
+                let angle = Math.atan2(player.targetY - (player.y + player.size/2), 
+                                     player.targetX - (player.x + player.size/2));
+                
+                let projectileType = selectedClass === 'archer' ? 'arrow' : 'fireball';
+                projectiles.push({
+                    x: player.x + player.size/2,
+                    y: player.y + player.size/2,
+                    vx: Math.cos(angle) * PROJECTILE_SPEED * (projectileType === 'arrow' ? 1.5 : 1),
+                    vy: Math.sin(angle) * PROJECTILE_SPEED * (projectileType === 'arrow' ? 1.5 : 1),
+                    size: 32 * player.projectileSize,
+                    damage: damage * (projectileType === 'arrow' ? 1.2 : 1),
+                    hits: player.projectileHits,
+                    type: projectileType
+                });
+                player.lastShot = Date.now();
+            }
+        }
+
+        function updateProjectiles() {
+            for(let i = projectiles.length - 1; i >= 0; i--) {
+                let p = projectiles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                
+                // Check if projectile is outside canvas
+                if(p.x < -50 || p.x > canvas.width + 50 || 
+                   p.y < -50 || p.y > canvas.height + 50 || 
+                   p.hits <= 0) {
+                    projectiles.splice(i, 1);
+                }
+            }
+
+            for(let i = enemyProjectiles.length - 1; i >= 0; i--) {
+                let p = enemyProjectiles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                
+                if(p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+                    enemyProjectiles.splice(i, 1);
+                }
+            }
+        }
+
+        function spawnEnemies() {
+            if(Date.now() - lastEnemySpawn > ENEMY_SPAWN_RATE / (1 + gameTime/10000)) {
+                enemies.push({
+                    x: Math.random() * canvas.width,
+                    y: 0,
+                    vx: 0,
+                    vy: 2,
+                    size: 64,
+                    type: Math.random() > 0.5 ? 'red' : 'green',
+                    hp: 20 + Math.floor(gameTime/1000),
+                    maxHp: 20 + Math.floor(gameTime/1000),
+                    hasReachedHeight: false,
+                    lastShot: 0,
+                    speed: 1
+                });
+                lastEnemySpawn = Date.now();
+            }
+        }
+
+        function updateEnemies() {
+            for(let enemy of enemies) {
+                if(!enemy.hasReachedHeight && enemy.y >= canvas.height * 0.7) {
+                    enemy.hasReachedHeight = true;
+                    enemy.patternTime = 0;
+                    enemy.pattern = Math.floor(Math.random() * 3); // 0: chase, 1: circle, 2: zigzag
+                }
+
+                if(enemy.hasReachedHeight) {
+                    enemy.patternTime++;
+                    
+                    // Different movement patterns
+                    switch(enemy.pattern) {
+                        case 0: // Chase pattern
+                            let dx = player.x - enemy.x;
+                            let dy = player.y - enemy.y;
+                            let dist = Math.sqrt(dx*dx + dy*dy);
+                            enemy.vx = (dx/dist) * 2 * enemy.speed;
+                            enemy.vy = (dy/dist) * 2 * enemy.speed;
+                            break;
+                            
+                        case 1: // Circle pattern
+                            let angle = enemy.patternTime * 0.05;
+                            let radius = 100;
+                            enemy.vx = Math.cos(angle) * enemy.speed * 2;
+                            enemy.vy = Math.sin(angle) * enemy.speed * 2;
+                            break;
+                            
+                        case 2: // Zigzag pattern
+                            enemy.vx = Math.sin(enemy.patternTime * 0.1) * enemy.speed * 3;
+                            enemy.vy = Math.cos(enemy.patternTime * 0.05) * enemy.speed;
+                            break;
+                    }
+
+                    // Shoot at player with prediction
+                    if(Date.now() - enemy.lastShot > 2000) {
+                        let dx = player.x - enemy.x;
+                        let dy = player.y - enemy.y;
+                        let dist = Math.sqrt(dx*dx + dy*dy);
+                        let timeToHit = dist / 5; // projectile speed is 5
+                        
+                        // Predict player position
+                        let targetX = player.x + player.vx * timeToHit;
+                        let targetY = player.y + player.vy * timeToHit;
+                        
+                        let angle = Math.atan2(targetY - enemy.y, targetX - enemy.x);
+                        enemyProjectiles.push({
+                            x: enemy.x,
+                            y: enemy.y,
+                            vx: Math.cos(angle) * 5,
+                            vy: Math.sin(angle) * 5,
+                            size: 6,
+                            damage: 10 + Math.floor(gameTime/1000)  // Damage increases over time
+                        });
+                        enemy.lastShot = Date.now();
+                    }
+                }
+
+                enemy.x += enemy.vx;
+                enemy.y += enemy.vy;
+                
+                // Keep enemies in bounds
+                enemy.x = Math.max(0, Math.min(canvas.width - enemy.size, enemy.x));
+                enemy.y = Math.max(0, Math.min(canvas.height - enemy.size, enemy.y));
+            }
+        }
+
+        function handleCollisions() {
+            // Player hit by enemy projectiles
+            if(!player.invincible) {
+                for(let i = enemyProjectiles.length - 1; i >= 0; i--) {
+                    let p = enemyProjectiles[i];
+                    if(checkCollision(player, p)) {
+                        let damage = Math.max(1, p.damage * (1 - player.defense/100));
+                        player.hp -= damage;
+                        enemyProjectiles.splice(i, 1);
+                        player.invincible = true;
+                        setTimeout(() => player.invincible = false, player.invulnerabilityDuration);
+                        
+                        if(player.hp <= 0) {
+                            resetGame();
+                        }
+                    }
+                }
+            } else if(player.absorbentHealing) {
+                for(let i = enemyProjectiles.length - 1; i >= 0; i--) {
+                    let p = enemyProjectiles[i];
+                    if(checkCollision(player, p)) {
+                        player.hp = Math.min(player.maxHp, player.hp + 1);
+                        enemyProjectiles.splice(i, 1);
+                    }
+                }
+            }
+
+            // Enemy hit by player projectiles
+            for(let i = enemies.length - 1; i >= 0; i--) {
+                for(let j = projectiles.length - 1; j >= 0; j--) {
+                    if(checkCollision(enemies[i], projectiles[j])) {
+                        enemies[i].hp -= projectiles[j].damage;
+                        projectiles[j].hits--;
+                        createParticles(enemies[i].x + enemies[i].size/2, enemies[i].y + enemies[i].size/2, 10, '#f00');
+                        
+                        if(player.slowOnHit) {
+                            enemies[i].speed = Math.max(0.2, enemies[i].speed * 0.9);
+                        }
+                        
+                        if(enemies[i].hp <= 0) {
+                            addExp(20);
+                            if(Math.random() < player.soulDropChance/100) {
+                                // Implement soul orb drop
+                            }
+                            enemies.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        function checkCollision(obj1, obj2) {
+            if (!obj1 || !obj2 || 
+                typeof obj1.x === 'undefined' || typeof obj1.y === 'undefined' || typeof obj1.size === 'undefined' ||
+                typeof obj2.x === 'undefined' || typeof obj2.y === 'undefined' || typeof obj2.size === 'undefined') {
+                return false;
+            }
+            return obj1.x < obj2.x + obj2.size &&
+                   obj1.x + obj1.size > obj2.x &&
+                   obj1.y < obj2.y + obj2.size &&
+                   obj1.y + obj1.size > obj2.y;
+        }
+
+        function addExp(amount) {
+            player.exp += amount;
+            if(player.exp >= player.nextLevelExp) {
+                levelUp();
+            }
+        }
+
+        function levelUp() {
+            player.level++;
+            player.exp = 0;
+            player.nextLevelExp *= 1.2;
+            showUpgrades();
+        }
+
+        function updateParticles() {
+            // Update grass animation
+            for(let blade of grassBlades) {
+                blade.angle = Math.sin(gameTime * blade.speed) * 0.2;
+            }
+
+            // Update particles
+            for(let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+                p.vy += 0.1; // gravity
+                
+                if(p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function createParticles(x, y, count, color, speed = 5, life = 30) {
+            for(let i = 0; i < count; i++) {
+                let angle = Math.random() * Math.PI * 2;
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * speed * Math.random(),
+                    vy: Math.sin(angle) * speed * Math.random(),
+                    size: 2 + Math.random() * 3,
+                    color: color,
+                    life: life + Math.random() * life
+                });
+            }
+        }
+
+        function drawGame() {
+            // Draw background
+            ctx.drawImage(backgroundSprite, 0, 0, canvas.width, canvas.height);
+
+            // Ground with gradient
+            gradient = ctx.createLinearGradient(0, canvas.height - 50, 0, canvas.height);
+            gradient.addColorStop(0, '#228B22');
+            gradient.addColorStop(1, '#006400');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+
+            // Draw grass
+            ctx.strokeStyle = '#32CD32';
+            for(let blade of grassBlades) {
+                ctx.save();
+                ctx.translate(blade.x, blade.y);
+                ctx.rotate(blade.angle);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(blade.width/2, -blade.height);
+                ctx.lineTo(-blade.width/2, -blade.height);
+                ctx.closePath();
+                ctx.fillStyle = '#228B22';
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Player
+            ctx.save();
+            if (player.invincible) {
+                ctx.globalAlpha = 0.5;
+            }
+            const currentSprite = selectedClass === 'archer' ? archerSprite : playerSprite;
+            ctx.drawImage(currentSprite, player.x, player.y, player.size, player.size);
+            ctx.restore();
+
+            // Projectiles
+            for(let p of projectiles) {
+                const sprite = p.type === 'arrow' ? arrowSprite : projectileSprite;
+                const rotation = Math.atan2(p.vy, p.vx);
+                ctx.save();
+                ctx.translate(p.x + p.size/2, p.y + p.size/2);
+                ctx.rotate(rotation);
+                ctx.drawImage(sprite, -p.size/2, -p.size/2, p.size, p.size);
+                ctx.restore();
+            }
+
+            // Enemy projectiles
+            ctx.fillStyle = '#f00';
+            for(let p of enemyProjectiles) {
+                ctx.fillRect(p.x, p.y, p.size, p.size);
+            }
+
+            // Enemies
+            for(let enemy of enemies) {
+                ctx.save();
+                const sprite = enemy.type === 'red' ? enemyRedSprite : enemyGreenSprite;
+                ctx.drawImage(sprite, enemy.x, enemy.y, enemy.size, enemy.size);
+                
+                // Enemy HP bar
+                let hpWidth = (enemy.hp / enemy.maxHp) * enemy.size;
+                ctx.fillStyle = '#0f0';
+                ctx.fillRect(enemy.x, enemy.y - 10, hpWidth, 5);
+            }
+
+            // HP Bar
+            ctx.fillStyle = '#0f0';
+            ctx.fillRect(10, 10, (player.hp/player.maxHp) * 200, 20);
+            ctx.strokeStyle = '#fff';
+            ctx.strokeRect(10, 10, 200, 20);
+
+            // EXP Bar
+            ctx.fillStyle = '#00f';
+            ctx.fillRect(10, 40, (player.exp/player.nextLevelExp) * 200, 20);
+            ctx.strokeStyle = '#fff';
+            ctx.strokeRect(10, 40, 200, 20);
+
+            // Level
+            ctx.fillStyle = '#fff';
+            ctx.font = '20px Arial';
+            ctx.fillText(`Level ${player.level}`, 220, 25);
+        }
+
+        function resetGame() {
+            player = {
+                x: canvas.width / 2,
+                y: canvas.height - 100,
+                vx: 0,
+                vy: 0,
+                hp: 100,
+                maxHp: 100,
+                exp: 0,
+                level: 1,
+                nextLevelExp: 100,
+                shooting: false,
+                lastShot: 0,
+                isGrounded: false,
+                invincible: false,
+                projectileDamage: 10,
+                criticalChance: 0,
+                jumpMultiplier: 1,
+                defense: 1,
+                attackSpeed: 1,
+                soulDropChance: 0,
+                projectileHits: 1,
+                moveSpeed: 1,
+                projectileSize: 1,
+                invulnerabilityDuration: 500,
+                upgradeChoices: 3,
+                hasBarrier: false,
+                slowOnHit: false,
+                absorbentHealing: false,
+                explosionArea: 1,
+                upgrades: {},
+                size: PLAYER_SIZE
+            };
+            enemies = [];
+            projectiles = [];
+            enemyProjectiles = [];
+            gameTime = 0;
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            gameTime++;
+            
+            updatePlayer();
+            updateProjectiles();
+            updateEnemies();
+            updateParticles();
+            handleCollisions();
+            spawnEnemies();
+            
+            drawGame();
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        let moveLeft = false;
+        let moveRight = false;
+
+        // Keyboard controls
+        window.addEventListener('keydown', (e) => {
+            if(e.key === 'a' || e.key === 'ArrowLeft') moveLeft = true;
+            if(e.key === 'd' || e.key === 'ArrowRight') moveRight = true;
+            if(e.key === ' ' || e.key === 'w' || e.key === 'ArrowUp') {
+                if(player.isGrounded) {
+                    player.vy = JUMP_FORCE * player.jumpMultiplier;
+                    player.isGrounded = false;
+                    player.canDoubleJump = true;
+                } else if(player.canDoubleJump) {
+                    player.vy = JUMP_FORCE * player.jumpMultiplier * 0.8;
+                    player.canDoubleJump = false;
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if(e.key === 'a' || e.key === 'ArrowLeft') moveLeft = false;
+            if(e.key === 'd' || e.key === 'ArrowRight') moveRight = false;
+        });
+
+        // Mouse controls
+        canvas.addEventListener('mousedown', () => player.shooting = true);
+        canvas.addEventListener('mouseup', () => player.shooting = false);
+
+        // Add mouse/touch tracking
+        player.targetX = canvas.width;
+        player.targetY = canvas.height / 2;
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            player.targetX = e.clientX - rect.left;
+            player.targetY = e.clientY - rect.top;
+        });
+
+        // Initial target position
+        player.targetX = canvas.width;
+        player.targetY = canvas.height / 2;
+
+        // Game will start after sprite loads
+    </script>
+</body>
+</html>
